@@ -87,14 +87,21 @@ def project_run_history(proj, run):
 
 @blueprint.route('/<project:proj>/triggers/', methods=('GET',))
 def project_trigger_list(proj):
-    permissions.assert_internal_user()
     p = get_or_404(Project.query.filter_by(name=proj))
+    permissions.assert_can_build(p)
     triggers = p.triggers
 
     t = request.args.get('type')
     if t:
         triggers = [x for x in triggers if x.type == TriggerTypes[t].value]
-    return jsendify([x.as_json() for x in triggers])
+
+    # Remove the secret values, no need to ever expose them
+    redacted = []
+    for t in triggers:
+        data = t.as_json()
+        data['secrets'] = [x for x in (data.get('secrets') or {}).keys()]
+        redacted.append(data)
+    return jsendify(redacted)
 
 
 @blueprint.route('/<project:proj>/triggers/', methods=('POST',))
