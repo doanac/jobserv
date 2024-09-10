@@ -492,10 +492,28 @@ def _update_max_memory(rundef):
         rundef["max-mem-bytes"] = total
 
 
+def _block_metadata_service():
+    """Block access to GCP/AWS metadata instance service if configured."""
+    block = config["jobserv"].get("block-metadata-service")
+    if block:
+        with open("/proc/net/route") as f:
+            for line in f:
+                parts = line.split()
+                if parts[1].lower() == "fea9fea9":
+                    # 169.254.169.254 encoded
+                    flags = int(parts[3], base=8)
+                    if flags & 11:  # 11 - "unreachable route"
+                        log.warning("Route to cloud metadata service already blocked")
+                        return
+        log.warning("Blocking route to cloud metadata service")
+        subprocess.check_call(["ip", "route", "add", "unreachable", "169.254.169.254"])
+
+
 def _handle_run(jobserv, rundef, rundir=None):
     runsdir = os.path.join(os.path.dirname(script), "runs")
     try:
         _run_callback("RUN_START", rundef)
+        _block_metadata_service()
         _update_shared_volumes_mapping(rundef)
         _update_max_memory(rundef)
         jobserv.update_run(rundef, "RUNNING", "Setting up runner on worker")
